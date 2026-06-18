@@ -6,3 +6,6 @@
 .env.keys
 .env.local
 .env.*.local
+
+# JWT signing keys (never commit)
+signing_keys.json
