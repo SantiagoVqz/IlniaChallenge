@@ -8,7 +8,18 @@
     "prebuild": "expo prebuild",
     "lint": "eslint \"**/*.{js,jsx,ts,tsx}\" && prettier -c \"**/*.{js,jsx,ts,tsx,json}\"",
     "format": "eslint \"**/*.{js,jsx,ts,tsx}\" --fix && prettier \"**/*.{js,jsx,ts,tsx,json}\" --write",
-    "web": "expo start --web"
+    "web": "expo start --web",
+
+    "db:staging": "supabase start --workdir infra/staging",
+    "db:production": "supabase start --workdir infra/production",
+    "db:staging:stop": "supabase stop --workdir infra/staging",
+    "db:production:stop": "supabase stop --workdir infra/production",
+
+    "api:staging": "dotenv -e .env.staging -- cross-env PORT=3000 node scripts/dev-server.mjs",
+    "api:production": "dotenv -e .env.production -- cross-env PORT=3001 node scripts/dev-server.mjs",
+
+    "start:staging": "dotenv -e .env.staging -- expo start -c",
+    "start:production": "dotenv -e .env.production -- expo start -c"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

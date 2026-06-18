@@ -1,0 +1,3 @@
+-- Seed data lives here (populated in Phase 1).
+-- Shared across staging and production via symlink:
+--   infra/production/supabase/seed.sql -> ../../staging/supabase/seed.sql
