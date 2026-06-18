@@ -26,6 +26,7 @@
   "devDependencies": {
     "@babel/core": "^7.20.0",
     "@types/react": "~19.1.10",
+    "@vercel/node": "^5.8.17",
     "cross-env": "^10.1.0",
     "eslint": "^9.25.1",
     "eslint-config-expo": "~10.0.0",

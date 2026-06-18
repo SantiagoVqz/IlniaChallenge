@@ -1,0 +1,1 @@
+../../staging/supabase/seed.sql
