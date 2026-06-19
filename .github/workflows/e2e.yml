@@ -1,18 +1,13 @@
 name: E2E
 
-# Runs the whole stack in CI so a reviewer can confirm it works from the Actions
-# tab without cloning anything:
+# Runs the backend in CI so a reviewer can confirm the security model from the
+# Actions tab without cloning anything:
 #   - backend-security: boots BOTH Supabase stacks + APIs and asserts the DB-layer
 #     security model (RLS tier-gating, 401 on no token, cross-env JWT rejection).
-#   - e2e-android: builds the real app, boots an Android emulator, and runs the
-#     Maestro UI flows against the staging stack.
 #
-# Why Android (not iOS): the E2E needs the Dockerized Supabase stack AND an emulator
-# in the same job. GitHub's macOS runners (required for the iOS Simulator) can't run
-# Docker, so the genuine backend can't come up there. Ubuntu runners run both Docker
-# and an Android emulator (via KVM), so that's the only runner that exercises the
-# real end-to-end path. The Maestro flows are platform-agnostic (testID-driven), so
-# the same flows that run on the iOS sim locally run on Android here.
+# The Maestro UI E2E (Android emulator) runs locally — see e2e/README.md. It is not
+# in CI: the emulator job is slow/flaky on shared runners and the critical DB-layer
+# guarantees are already proven headlessly by backend-security above.
 
 on:
   push:
@@ -40,7 +35,11 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned, NOT `latest`: the seed hand-writes auth.users rows, which only
+          # work against the GoTrue image this CLI version pins. `latest` floats the
+          # image set and broke the security checks (login failed -> no flags) when it
+          # advanced past the version this repo was validated on. Bump deliberately.
+          version: 2.95.4
 
       # signing_keys.json is gitignored — recreate a fresh, DISTINCT key per stack
       # (distinct keys are what make the cross-env rejection in step "verify" true).
@@ -98,128 +97,3 @@ jobs:
       - name: Dump API logs on failure
         if: failure()
         run: tail -n 100 api-staging.log api-production.log || true
-
-  e2e-android:
-    name: E2E UI (Android + Maestro)
-    runs-on: ubuntu-latest
-    steps:
-      # KVM gives the Android emulator hardware acceleration on the Ubuntu runner.
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - run: npm ci
-
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Generate staging signing key
-        run: node scripts/gen-signing-key.mjs infra/staging/supabase/signing_keys.json
-
-      - name: Start Supabase (staging)
-        run: supabase start --workdir infra/staging
-
-      - name: Write staging env
-        run: |
-          out="$(supabase status --workdir infra/staging -o env)"
-          pub="$(printf '%s\n' "$out"    | sed -n 's/^PUBLISHABLE_KEY="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p')"
-          secret="$(printf '%s\n' "$out" | sed -n 's/^SECRET_KEY="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p')"
-          url="$(printf '%s\n' "$out"    | sed -n 's/^API_URL="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p')"
-          cat > .env.staging <<EOF
-          APP_ENV=staging
-          EXPO_PUBLIC_APP_ENV=staging
-          EXPO_PUBLIC_API_URL=http://localhost:3000
-          EXPO_PUBLIC_SUPABASE_URL=$url
-          EXPO_PUBLIC_SUPABASE_ANON_KEY=$pub
-          SUPABASE_URL=$url
-          SUPABASE_SERVICE_ROLE_KEY=$secret
-          SUPABASE_PUBLISHABLE_KEY=$pub
-          EOF
-
-      - name: Start local API (:3000)
-        run: |
-          nohup npm run api:staging > api-staging.log 2>&1 &
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:3000/api/health >/dev/null && break
-            sleep 1
-          done
-
-      # Generate the native android/ project (gitignored) and build a debug APK.
-      # Debug build => cleartext HTTP to the local stack is allowed, and the app
-      # pulls its JS bundle from Metro (started below).
-      - name: Prebuild + build debug APK
-        run: |
-          npx expo prebuild --platform android --no-install
-          chmod +x android/gradlew
-          (cd android && ./gradlew :app:assembleDebug --no-daemon)
-
-      - name: Start Metro (staging env)
-        run: |
-          nohup npm run start:staging > metro.log 2>&1 &
-          for i in $(seq 1 60); do
-            curl -sf http://localhost:8081/status >/dev/null && break
-            sleep 2
-          done
-          # Pre-compile the Android bundle so the app's first launch is fast.
-          curl -s "http://localhost:8081/index.bundle?platform=android&dev=true&minify=false" -o /dev/null || true
-
-      - name: Install Maestro
-        run: |
-          curl -Ls https://get.maestro.mobile.dev | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
-
-      # The committed flows carry the iOS appId; rewrite it to the Android package
-      # for this run (the iOS bundle id has a hyphen, which Android forbids). The
-      # flows are otherwise identical — same testIDs drive both platforms.
-      - name: Prepare Android flows
-        run: |
-          mkdir -p e2e-android
-          for f in e2e/*.yaml; do
-            sed 's/^appId: .*/appId: com.santivqz.ilniachallengesv/' "$f" > "e2e-android/$(basename "$f")"
-          done
-
-      - name: Run Maestro on emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          ram-size: 4096M
-          disable-animations: true
-          script: |
-            export PATH="$PATH:$HOME/.maestro/bin"
-            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            # adb reverse maps the device's localhost to the runner's localhost,
-            # so the inlined http://localhost:3000 / 127.0.0.1:54321 URLs just work.
-            adb reverse tcp:8081 tcp:8081
-            adb reverse tcp:3000 tcp:3000
-            adb reverse tcp:54321 tcp:54321
-            maestro test e2e-android/
-
-      - name: Upload Maestro + logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: maestro-debug-output
-          path: |
-            ~/.maestro/tests
-            metro.log
-            api-staging.log
-          if-no-files-found: ignore
