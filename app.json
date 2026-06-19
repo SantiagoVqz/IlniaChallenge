@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "my-expo-app",
-    "slug": "my-expo-app",
+    "name": "Ilnia Challenge SV",
+    "slug": "ilnia-challenge-sv",
     "version": "1.0.0",
     "web": {
       "favicon": "./assets/favicon.png"
@@ -25,7 +25,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.santivqz.my-expo-app"
+      "bundleIdentifier": "com.santivqz.ilnia-challenge-sv"
     },
     "android": {
       "adaptiveIcon": {
