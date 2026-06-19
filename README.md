@@ -25,6 +25,60 @@ the rows that identity is allowed to see.
 
 ---
 
+## Quick start
+
+A `Makefile` wraps every command below — run `make help` to list targets. The shortest
+path from a clean checkout to a green E2E run, with **Docker running**:
+
+```bash
+make doctor          # confirms node / supabase / docker / java / maestro are installed
+make install         # JS dependencies
+
+make ios             # ONE-TIME: native build + install the app on the booted simulator
+```
+
+Then open **four terminals** and run one command in each (each stays running):
+
+```bash
+# terminal 1 — Supabase staging stack
+make db-staging
+
+# terminal 2 — local API (:3000)
+make api-staging
+
+# terminal 3 — Metro bundler with staging env; press i to open the sim
+make app-staging
+
+# terminal 4 — run the E2E UI test
+make e2e
+```
+
+That's it. `make e2e` prints `✅ Flow Passed` for each flow. First run only:
+`make db-staging` applies migrations + seed automatically; if you ever need to reset the
+data, run `supabase db reset --workdir infra/staging`.
+
+> **Why four terminals?** The DB, API, and Metro are long-running services, and Maestro
+> drives the **already-installed** app on the simulator — it doesn't build or serve. The
+> detailed, npm-equivalent steps are in [Running it](#running-it) below.
+
+### Make targets
+
+| Command | What it does |
+| --- | --- |
+| `make help` | List all targets |
+| `make doctor` | Check required tools are installed |
+| `make install` | `npm install` |
+| `make ios` | One-time native build + install on the simulator |
+| `make db-staging` / `make db-production` | Start a Supabase stack (`*-stop` to stop) |
+| `make api-staging` / `make api-production` | Serve the local API (:3000 / :3001) |
+| `make app-staging` / `make app-production` | Start Metro with the matching env |
+| `make e2e` | Run both Maestro flows |
+| `make e2e-free` / `make e2e-premium` | Run a single flow |
+| `make health` | Curl the staging `/api/health` endpoint |
+| `make lint` / `make format` | Lint + prettier (check / auto-fix) |
+
+---
+
 ## Architecture & key decisions
 
 ### 1. Authorization = JWT pass-through + RLS as the real gate
