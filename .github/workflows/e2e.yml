@@ -35,10 +35,12 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          # Pinned, NOT `latest`: the seed hand-writes auth.users rows, which only
-          # work against the GoTrue image this CLI version pins. `latest` floats the
-          # image set and broke the security checks (login failed -> no flags) when it
-          # advanced past the version this repo was validated on. Bump deliberately.
+          # Pinned, NOT `latest`. The CLI version pins the Supabase Docker image set,
+          # and newer images dropped the blanket default privileges that older ones
+          # granted to the `authenticated` role on new public tables. On `latest`
+          # (v2.107.0) the security check failed with `42501 permission denied for table
+          # feature_flags` (the role had no SELECT). 2.95.4 matches the locally-validated
+          # stack. Durable fix: GRANT SELECT explicitly in a migration, then unpin.
           version: 2.95.4
 
       # signing_keys.json is gitignored — recreate a fresh, DISTINCT key per stack

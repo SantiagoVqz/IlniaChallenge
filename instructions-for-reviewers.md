@@ -7,10 +7,11 @@ verify it works, and *why* each non-obvious decision was made.** It assumes noth
 a clean checkout and Docker running. The root `README.md` has the full architecture write-up;
 this is the operator's guide plus a decision log.
 
-> **Don't want to run anything?** CI already does. Every push runs the full stack on
-> GitHub Actions — the DB-layer security assertions *and* the Maestro UI flows on an Android
-> emulator. Click the badge above (or the **Actions** tab) to see it green. Details in
-> [§7 CI](#7-ci--run-free-verification).
+> **Don't want to run anything?** CI does the most important part. Every push runs the
+> **DB-layer security assertions** on GitHub Actions — both Supabase stacks + APIs, per-tier
+> RLS gating, the 401, and the cross-environment JWT rejection. Click the badge above (or the
+> **Actions** tab) to see it green. The Maestro UI E2E runs locally (§4) — see
+> [§7 CI](#7-ci--run-free-verification) for why it's not in CI.
 
 ---
 
@@ -44,7 +45,12 @@ make doctor
 ```
 
 > `.env.staging`, `.env.production`, and each stack's `signing_keys.json` are **gitignored**
-> (local secrets). If they're missing on your checkout, see `infra/README.md` for regeneration.
+> (local secrets). Bootstrap the env files in one shot with **`make create-env`**, which
+> copies the committed `config.env.staging` / `config.env.production` templates into place.
+> Those templates carry the static local Supabase defaults but **omit** the
+> `SUPABASE_SERVICE_ROLE_KEY` (GitHub blocks the `sb_secret_*` pattern, and it's unused on
+> the read path — see **D1**); copy it from `supabase status` only if you need admin/seed
+> access. For `signing_keys.json`, see `infra/README.md`.
 
 ---
 
@@ -82,6 +88,7 @@ state at any point: `supabase db reset --workdir infra/staging`.
 | `make help` | List all targets |
 | `make doctor` | Check required tools are installed |
 | `make install` | `npm install` |
+| `make create-env` | Generate `.env.staging` + `.env.production` from the committed `config.env.*` templates |
 | `make ios` | One-time native build + install on the simulator |
 | `make db-staging` / `make db-production` | Start a Supabase stack (`*-stop` to stop) |
 | `make api-staging` / `make api-production` | Serve the local API (:3000 / :3001) |
@@ -272,13 +279,12 @@ from scratch.
 
 ## 7. CI — run-free verification
 
-`.github/workflows/e2e.yml` reproduces the entire local setup on GitHub Actions, so the
-deliverables can be confirmed straight from the **Actions** tab without cloning. Two jobs:
+`.github/workflows/e2e.yml` reproduces the backend security model on GitHub Actions, so the
+core claim can be confirmed straight from the **Actions** tab without cloning. One job:
 
 | Job | What it proves | Roughly |
 | --- | --- | --- |
 | **backend-security** | Boots **both** Supabase stacks + both APIs, then runs `scripts/ci/verify-security.sh`: per-tier RLS gating (free/premium/suspended), 401 without a token, and a staging JWT rejected by production. | ~3–5 min |
-| **e2e-android** | Prebuilds the app, builds a debug APK, boots the **staging** stack + API + Metro, starts an Android emulator, and runs the real Maestro flows (`e2e/`). | ~15–25 min |
 
 The workflow is **fully self-contained — no repo secrets to configure:**
 
@@ -288,17 +294,24 @@ The workflow is **fully self-contained — no repo secrets to configure:**
 - **`.env.*`** (gitignored) are rebuilt in-workflow from each stack's live
   `supabase status`, so they never depend on hardcoded keys.
 
-### Why Android in CI, when local dev uses the iOS Simulator
-
-The E2E run needs the **Dockerized Supabase stack and an emulator in the same job**.
-GitHub's macOS runners (required for the iOS Simulator) **can't run Docker**, so the real
-backend can't come up there. Ubuntu runners run **both** Docker and an Android emulator (via
-KVM), so that's the only runner that exercises the genuine end-to-end path. The Maestro flows
-are testID-driven and platform-agnostic, so the same flows that drive the iOS sim locally
-drive Android in CI — the workflow just rewrites the flow `appId` to the Android package
-(`com.santivqz.ilniachallengesv`; the iOS bundle id contains a hyphen, which Android forbids).
-The networking gap is bridged with `adb reverse`, so the app's `localhost` URLs reach the
-runner's stack unchanged.
-
 You can run the exact security checks CI runs, locally: with both stacks + APIs up,
 `bash scripts/ci/verify-security.sh`.
+
+### Why the Maestro UI E2E is *not* in CI
+
+It needs the **Dockerized Supabase stack and a device emulator in the same job**. GitHub's
+macOS runners (required for the iOS Simulator) can't run Docker, and the Android-emulator
+alternative on Ubuntu was slow and flaky (~15–25 min, KVM-dependent). The DB-layer guarantees
+— the actual security claim — are already proven headlessly by **backend-security** above, so
+the emulator job was removed to keep CI fast and reliable. The Maestro flows still run
+locally against the iOS Simulator (§4, `e2e/README.md`).
+
+### Why the Supabase CLI is pinned (not `latest`)
+
+The CLI version pins the Supabase Docker image set. `latest` (then v2.107.0) pulled a newer
+Postgres image that **dropped the blanket default privileges** older images granted to the
+`authenticated` role on new `public` tables — so the security check failed with
+`42501 permission denied for table feature_flags`. CI pins **2.95.4** to match the
+locally-validated stack. The durable fix (so the pin can be dropped) is to `GRANT SELECT ON
+public.feature_flags TO authenticated` explicitly in a migration rather than relying on the
+image's implicit defaults.

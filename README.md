@@ -68,6 +68,7 @@ data, run `supabase db reset --workdir infra/staging`.
 | `make help` | List all targets |
 | `make doctor` | Check required tools are installed |
 | `make install` | `npm install` |
+| `make create-env` | Generate `.env.staging` + `.env.production` from the committed `config.env.*` templates |
 | `make ios` | One-time native build + install on the simulator |
 | `make db-staging` / `make db-production` | Start a Supabase stack (`*-stop` to stop) |
 | `make api-staging` / `make api-production` | Serve the local API (:3000 / :3001) |
@@ -145,8 +146,12 @@ npm install
 ```
 
 > `.env.staging`, `.env.production`, and each stack's `signing_keys.json` are **gitignored**
-> (they hold local secrets). The signing keys are generated per stack — see
-> `infra/README.md` if you need to regenerate them.
+> (they hold local secrets). Run **`make create-env`** to generate the two `.env.*` files from
+> the committed `config.env.*` templates. The templates carry the static local Supabase
+> defaults but **omit** `SUPABASE_SERVICE_ROLE_KEY` — GitHub push protection blocks the
+> `sb_secret_*` pattern, and the key is unused on the user-facing read path (the API uses the
+> publishable key). Copy it from `supabase status` only for admin/seed tasks. The signing keys
+> are generated per stack — see `infra/README.md` to regenerate them.
 
 ---
 
@@ -224,6 +229,13 @@ maestro test e2e/login_premium_user.yaml
 ```
 
 Full setup (Maestro + Java install, prereqs): [`e2e/README.md`](e2e/README.md).
+
+> **CI.** `.github/workflows/e2e.yml` runs the **backend-security** job on every push/PR:
+> it boots both Supabase stacks + APIs and runs `scripts/ci/verify-security.sh` (per-tier RLS
+> gating, 401 without a token, cross-environment JWT rejection) — the DB-layer guarantees,
+> proven headlessly. The Maestro UI flows run locally (the emulator-in-CI job was dropped for
+> speed/reliability). The Supabase CLI is pinned in CI for reproducible images. See
+> [`instructions-for-reviewers.md`](instructions-for-reviewers.md) §7.
 
 ---
 
