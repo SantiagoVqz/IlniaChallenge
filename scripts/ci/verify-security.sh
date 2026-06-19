@@ -29,14 +29,28 @@ ok()  { echo "  ✅ $1"; pass=$((pass + 1)); }
 bad() { echo "  ❌ $1"; fail=$((fail + 1)); }
 
 mint() { # email -> access_token (minted against the STAGING auth server)
-  curl -s "${SUPA_URL}/auth/v1/token?grant_type=password" \
+  local resp token
+  resp="$(curl -s "${SUPA_URL}/auth/v1/token?grant_type=password" \
     -H "apikey: ${ANON}" -H "Content-Type: application/json" \
-    -d "{\"email\":\"$1\",\"password\":\"password123\"}" | jq -r '.access_token'
+    -d "{\"email\":\"$1\",\"password\":\"password123\"}")"
+  token="$(printf '%s' "$resp" | jq -r '.access_token // empty')"
+  if [ -z "$token" ]; then
+    # Surface the real auth error (e.g. "Database error querying schema" when the
+    # seed and the GoTrue image disagree) instead of a downstream jq null crash.
+    echo "  ⚠️  login failed for $1: $resp" >&2
+  fi
+  printf '%s' "$token"
 }
 
-flag_keys() { # token, api_base -> sorted comma-joined flag keys
-  curl -s "$2/api/flags" -H "Authorization: Bearer $1" \
-    | jq -r '[.flags[].key] | sort | join(",")'
+flag_keys() { # token, api_base -> sorted comma-joined flag keys (or "" + diagnostic)
+  local body
+  body="$(curl -s "$2/api/flags" -H "Authorization: Bearer $1")"
+  if ! printf '%s' "$body" | jq -e '.flags' >/dev/null 2>&1; then
+    # API returned an error object (401/500), not {flags:[...]}; report it.
+    echo "  ⚠️  $2/api/flags returned no flags: $body" >&2
+    return 0
+  fi
+  printf '%s' "$body" | jq -r '[.flags[].key] | sort | join(",")'
 }
 
 http_with_token()    { curl -s -o /dev/null -w '%{http_code}' "$2/api/flags" -H "Authorization: Bearer $1"; }

@@ -25,6 +25,17 @@ doctor: ## Check that the tools reviewers need are installed
 	@echo "java:     $$(java -version 2>&1 | head -n1 || echo 'MISSING (brew install openjdk@17)')"
 	@echo "maestro:  $$(maestro --version 2>/dev/null || echo 'MISSING (curl -Ls https://get.maestro.mobile.dev | bash)')"
 
+# --- Env bootstrap -------------------------------------------------------------
+
+.PHONY: create-env-staging create-env-production create-env
+create-env-staging: ## Generate .env.staging from config.env.staging
+	@cp config.env.staging .env.staging
+	@echo "Wrote .env.staging (from config.env.staging)"
+create-env-production: ## Generate .env.production from config.env.production
+	@cp config.env.production .env.production
+	@echo "Wrote .env.production (from config.env.production)"
+create-env: create-env-staging create-env-production ## Generate both .env files
+
 # --- Backend stacks (Supabase) -------------------------------------------------
 
 .PHONY: db-staging db-production db-staging-stop db-production-stop
