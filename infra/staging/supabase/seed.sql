@@ -35,6 +35,20 @@ insert into auth.users (
    crypt('password123', gen_salt('bf')), now(), now(), now(),
    '{"provider":"email","providers":["email"]}', '{}');
 
+-- GoTrue scans these token columns as non-null Go strings; a direct INSERT leaves
+-- them NULL, which 500s every password login ("converting NULL to string is
+-- unsupported"). Backfill them to empty strings for the seeded users.
+update auth.users set
+  confirmation_token         = '',
+  recovery_token             = '',
+  email_change               = '',
+  email_change_token_new     = '',
+  email_change_token_current = '',
+  phone_change               = '',
+  phone_change_token         = '',
+  reauthentication_token     = ''
+where email like '%@example.com';
+
 -- Identities are required for email/password login on current Supabase Auth.
 insert into auth.identities (
   id, user_id, provider_id, identity_data, provider, created_at, updated_at
