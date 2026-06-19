@@ -1,9 +1,16 @@
 # Instructions for Reviewers
 
+[![E2E](https://github.com/SantiagoVqz/IlniaChallenge/actions/workflows/e2e.yml/badge.svg)](https://github.com/SantiagoVqz/IlniaChallenge/actions/workflows/e2e.yml)
+
 This doc is the fast path for evaluating the challenge: **how to run everything, how to
 verify it works, and *why* each non-obvious decision was made.** It assumes nothing beyond
 a clean checkout and Docker running. The root `README.md` has the full architecture write-up;
 this is the operator's guide plus a decision log.
+
+> **Don't want to run anything?** CI already does. Every push runs the full stack on
+> GitHub Actions — the DB-layer security assertions *and* the Maestro UI flows on an Android
+> emulator. Click the badge above (or the **Actions** tab) to see it green. Details in
+> [§7 CI](#7-ci--run-free-verification).
 
 ---
 
@@ -260,3 +267,38 @@ from scratch.
 | Env toggling + badge | `.env.*`, `package.json` `start:*`, `components/EnvBadge.tsx` |
 | E2E flows | `e2e/login_free_user.yaml`, `e2e/login_premium_user.yaml` |
 | How the two stacks isolate | `infra/README.md` |
+
+---
+
+## 7. CI — run-free verification
+
+`.github/workflows/e2e.yml` reproduces the entire local setup on GitHub Actions, so the
+deliverables can be confirmed straight from the **Actions** tab without cloning. Two jobs:
+
+| Job | What it proves | Roughly |
+| --- | --- | --- |
+| **backend-security** | Boots **both** Supabase stacks + both APIs, then runs `scripts/ci/verify-security.sh`: per-tier RLS gating (free/premium/suspended), 401 without a token, and a staging JWT rejected by production. | ~3–5 min |
+| **e2e-android** | Prebuilds the app, builds a debug APK, boots the **staging** stack + API + Metro, starts an Android emulator, and runs the real Maestro flows (`e2e/`). | ~15–25 min |
+
+The workflow is **fully self-contained — no repo secrets to configure:**
+
+- **Signing keys** (`signing_keys.json`, gitignored) are regenerated per stack by
+  `scripts/gen-signing-key.mjs`. Generating a *distinct* ES256 key per stack is what makes
+  the cross-environment rejection real — see decision **D2**.
+- **`.env.*`** (gitignored) are rebuilt in-workflow from each stack's live
+  `supabase status`, so they never depend on hardcoded keys.
+
+### Why Android in CI, when local dev uses the iOS Simulator
+
+The E2E run needs the **Dockerized Supabase stack and an emulator in the same job**.
+GitHub's macOS runners (required for the iOS Simulator) **can't run Docker**, so the real
+backend can't come up there. Ubuntu runners run **both** Docker and an Android emulator (via
+KVM), so that's the only runner that exercises the genuine end-to-end path. The Maestro flows
+are testID-driven and platform-agnostic, so the same flows that drive the iOS sim locally
+drive Android in CI — the workflow just rewrites the flow `appId` to the Android package
+(`com.santivqz.ilniachallengesv`; the iOS bundle id contains a hyphen, which Android forbids).
+The networking gap is bridged with `adb reverse`, so the app's `localhost` URLs reach the
+runner's stack unchanged.
+
+You can run the exact security checks CI runs, locally: with both stacks + APIs up,
+`bash scripts/ci/verify-security.sh`.
