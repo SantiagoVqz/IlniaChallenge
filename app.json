@@ -28,6 +28,7 @@
       "bundleIdentifier": "com.santivqz.ilnia-challenge-sv"
     },
     "android": {
+      "package": "com.santivqz.ilniachallengesv",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
