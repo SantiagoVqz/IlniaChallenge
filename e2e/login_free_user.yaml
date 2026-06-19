@@ -1,0 +1,59 @@
+# CRITICAL FLOW
+#   launch -> log in as a FREE-tier seed user -> the UI reflects that account's
+#   server-side entitlements.
+#
+# This proves the security model end-to-end from the UI: a free user sees the
+# free-tier flag (basic_search) but NOT a premium flag (new_dashboard). The
+# absence is decided by Postgres RLS, never by the client — so this single
+# assertion exercises auth -> JWT -> API pass-through -> RLS -> render.
+#
+# Prereqs: staging stack + staging API (:3000) up, app installed on a booted
+# simulator, and Metro running with the staging env (npm run start:staging).
+appId: com.santivqz.my-expo-app
+---
+- launchApp:
+    clearState: true # clears app data (NOT the keychain, where the session lives)
+
+# env-badge renders on whichever screen loads first, once the loading spinner
+# clears — a reliable "app is ready" signal that also rides out first-bundle build.
+- extendedWaitUntil:
+    visible:
+      id: 'env-badge'
+    timeout: 60000
+
+# expo-secure-store keeps the session in the iOS keychain, which survives
+# clearState — so sign out first if a previous run left us logged in. This
+# makes the flow hermetic and order-independent.
+- runFlow:
+    when:
+      visible:
+        id: 'signout-button'
+    commands:
+      - tapOn:
+          id: 'signout-button'
+
+# Now we must be on the login screen, targeting the right environment
+- assertVisible:
+    id: 'email-input'
+- assertVisible:
+    id: 'env-badge'
+
+# --- Sign in as the free-tier user ---
+- tapOn:
+    id: 'email-input'
+- eraseText # clear the prefilled default
+- inputText: 'free@example.com'
+- tapOn:
+    id: 'password-input'
+- eraseText
+- inputText: 'password123'
+- tapOn:
+    id: 'signin-button'
+
+# --- Assert the UI reflects free-tier entitlements ---
+- assertVisible:
+    id: 'flags-list'
+- assertVisible:
+    id: 'flag-basic_search' # free tier CAN see this
+- assertNotVisible:
+    id: 'flag-new_dashboard' # premium-only -> RLS hides it -> UI must not show it
