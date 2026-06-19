@@ -1,0 +1,49 @@
+# Companion flow: a PREMIUM user sees BOTH the free flag and the premium flag,
+# demonstrating that entitlements widen with tier (the same RLS gate, viewed
+# from a higher tier). Run alongside login_free_user.yaml to show the contrast.
+#
+# Prereqs: identical to login_free_user.yaml.
+appId: com.santivqz.my-expo-app
+---
+- launchApp:
+    clearState: true
+
+# env-badge renders once the loading spinner clears — a reliable "app is ready"
+# signal that also rides out the first-bundle build on a cold start.
+- extendedWaitUntil:
+    visible:
+      id: 'env-badge'
+    timeout: 60000
+
+# Session lives in the iOS keychain (survives clearState) — sign out if a prior
+# run left us logged in, so this flow is hermetic and order-independent.
+- runFlow:
+    when:
+      visible:
+        id: 'signout-button'
+    commands:
+      - tapOn:
+          id: 'signout-button'
+
+- assertVisible:
+    id: 'email-input'
+- assertVisible:
+    id: 'env-badge'
+
+- tapOn:
+    id: 'email-input'
+- eraseText
+- inputText: 'premium@example.com'
+- tapOn:
+    id: 'password-input'
+- eraseText
+- inputText: 'password123'
+- tapOn:
+    id: 'signin-button'
+
+- assertVisible:
+    id: 'flags-list'
+- assertVisible:
+    id: 'flag-basic_search' # free-tier flag, still visible to premium
+- assertVisible:
+    id: 'flag-new_dashboard' # premium flag, now visible
