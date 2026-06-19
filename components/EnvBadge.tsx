@@ -1,3 +1,4 @@
+// Visual component to see which environment we are currently viewing. 
 import { View, Text } from 'react-native';
 
 const ENV = (process.env.EXPO_PUBLIC_APP_ENV ?? 'unknown').toLowerCase();
